@@ -42,7 +42,7 @@ static struct udev *udev;
 static struct udev_monitor *mon;
 static GIOChannel *iochannel;
 static guint watch_id; 
-static const char *dev_name;
+static char *dev_name = 0;
 static int cleanup = 0;
 
 typedef struct power_device {
@@ -132,7 +132,7 @@ gboolean hwal_init(void)
   if(udev_path)
   {
 	dev = udev_device_new_from_syspath(udev, udev_path);
-	g_free((gpointer *)udev_path);
+	g_free(udev_path);
   }
   else
   	dev = udev_device_new_from_syspath(udev, "/sys/class/power_supply/usb");
@@ -186,7 +186,7 @@ gboolean hwal_init(void)
   if(udev_subsystem)
   {
 	  ret = udev_monitor_filter_add_match_subsystem_devtype(mon, udev_subsystem, NULL);
-	  g_free((gpointer *)udev_subsystem);
+	  g_free(udev_subsystem);
   }
   else
 	  ret = udev_monitor_filter_add_match_subsystem_devtype(mon, "power_supply", NULL);
@@ -262,7 +262,7 @@ void hwal_cleanup(void)
     g_io_channel_unref(iochannel);
     iochannel = NULL;
   }
-  free((void *) dev_name);
+  free(dev_name);
   udev_monitor_unref(mon);
   udev_unref(udev);
 }
