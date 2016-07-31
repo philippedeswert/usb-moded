@@ -90,11 +90,15 @@ AM_CONDITIONAL([OFONO], [test x$ofono = xtrue])
 
 AC_ARG_ENABLE([libusbg], AS_HELP_STRING([--enable-libusbg], [Enable the use of libusbg to use the USB gadgetfs  @<:@default=false@:>@]),
   [case "${enableval}" in
-   yes) libusbg=true ; CFLAGS="-DLIBUSBG $CFLAGS" ;;
+   yes) libusbg=true ; PKG_CHECK_MODULES([LIBUSBG], [libusbgx]); CFLAGS="-DLIBUSBG $CFLAGS" ;;
    no)  libusbg=false ;;
    *) AC_MSG_ERROR([bad value ${enableval} for --enable-libusbg]) ;;
    esac],[libusbg=false])
 AM_CONDITIONAL([LIBUSBG], [test x$libusbg = xtrue])
+
+if test "x$libusbg" = xfalse ; then
+	PKG_CHECK_MODULES([KMOD], [libkmod])
+fi
 
 PKG_CHECK_MODULES([USB_MODED], [
  glib-2.0 >= 2.24.0
@@ -103,11 +107,12 @@ PKG_CHECK_MODULES([USB_MODED], [
  gobject-2.0 >= 2.16.6
  gio-2.0
  libudev
- libkmod
 ])
 
 AC_SUBST(USB_MODED_LIBS)
 AC_SUBST(USB_MODED_CFLAGS)
+AC_SUBST(LIBUSBG_LIBS)
+AC_SUBST(KMOD_LIBS)
 
 AC_CONFIG_FILES([
 	Makefile
@@ -121,8 +126,8 @@ echo "
  == $PACKAGE_NAME $VERSION ==
 
     Compiler:               ${CC}
-    CFLAGS:                 ${CFLAGS}
-    LDFLAGS:		    ${LDFLAGS}
+    CFLAGS:                 ${CFLAGS} ${USB_MODED_CFLAGS}
+    LDFLAGS:		    ${LDFLAGS} ${USB_MODED_LIBS}${LIBUSBG_LIBS} ${KMOD_LIBS}
 
     Debug enabled:          ${debug}
 "

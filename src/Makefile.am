@@ -8,7 +8,9 @@ usb_moded_LDFLAGS = \
 	-Wl,--as-needed
 
 usb_moded_LDADD = \
-        $(USB_MODED_LIBS)
+        $(USB_MODED_LIBS) \
+	$(LIBUSBG_LIBS) \
+	$(KMOD_LIBS)
 		
 usb_moded_SOURCES = \
         usb_moded.c \
@@ -34,7 +36,6 @@ usb_moded_SOURCES = \
 	usb_moded-dyn-config.h \
 	usb_moded-udev.c \
 	usb_moded-trigger.c \
-	usb_moded-modules.c \
 	usb_moded-android.h \
 	usb_moded-android.c
 
@@ -42,6 +43,14 @@ if USE_MER_SSU
 usb_moded_SOURCES += \
 	usb_moded-ssu.h \
 	usb_moded-ssu.c
+endif
+
+if LIBUSBG
+usb_moded_SOURCES += \
+	usb_moded-modules-libusbg.c
+else
+usb_moded_SOURCES += \
+	usb_moded-modules.c
 endif
 
 if MEEGOLOCK
@@ -74,7 +83,9 @@ usb_moded_util_LDFLAGS = \
 	-Wl,--as-needed
 
 usb_moded_util_LDADD = \
-        $(USB_MODED_LIBS)
+        $(USB_MODED_LIBS) \
+	$(LIBUSBG_LIBS) \
+	$(KMOD_LIBS)
 	
 usb_moded_util_SOURCES = \
 	usb_moded-util.c
