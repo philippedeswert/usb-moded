@@ -1,19 +1,19 @@
 /**
   @file usb_moded-modules-libusbg.c
- 
+
   Copyright (C) 2014 Jolla. All rights reserved.
 
   @author: Philippe De Swert <philippe.deswert@jolla.com>
 
   This program is free software; you can redistribute it and/or
-  modify it under the terms of the Lesser GNU General Public License 
-  version 2 as published by the Free Software Foundation. 
+  modify it under the terms of the Lesser GNU General Public License
+  version 2 as published by the Free Software Foundation.
 
   This program is distributed in the hope that it will be useful, but
   WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
   General Public License for more details.
- 
+
   You should have received a copy of the Lesser GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
@@ -37,23 +37,26 @@
 #include "usb_moded-modesetting.h"
 #include "usb_moded-config.h"
 
+static usbg_state *usb_ctx = 0;
+
 /* module context init and cleanup functions */
 void usb_moded_module_ctx_init(void)
 {
-        usbg_state *s;
         int usbg_ret;
 
-        usbg_ret = usbg_init("/sys/kernel/config", &s);
+        usbg_ret = usbg_init("/sys/kernel/config", &usb_ctx);
         if (usbg_ret != USBG_SUCCESS)
                 fprintf(stderr, "Error on USB gadget init\n");
 
+	/* create all gadgets from config means we need to keep a reference to each gadget */
 }
 
 void usb_moded_module_ctx_cleanup(void)
 {
+	usbg_cleanup(usb_ctx);
 }
 
-/** load module 
+/** load module
  *
  * @param module Name of the module to load
  * or in this case tree to set up and activate
@@ -62,11 +65,12 @@ void usb_moded_module_ctx_cleanup(void)
  */
 int usb_moded_load_module(const char *module)
 {
+
   return (0);
 }
 
 /** unload module
- *  
+ *
  * @param module Name of the module to unload
  * or in this case deactivate the gadget
  * @return 0 on success, non-zero on failure
@@ -87,7 +91,7 @@ inline static int module_state_check(const char *module)
 	return(0);
 }
 
-/** find which module is loaded 
+/** find which module is loaded
  *
  * @return The name of the loaded module, or NULL if no modules are loaded.
  */
@@ -118,7 +122,7 @@ inline int usb_moded_module_switch_prepare (int force)
 	return 0;
 }
 
-/** check for loaded modules and clean-up if they are not for the chosen mode 
+/** check for loaded modules and clean-up if they are not for the chosen mode
  *
  * @param module_name  module name to check for
  *
@@ -127,5 +131,3 @@ inline void check_module_state(const char *module_name)
 {
   return;
 }
-
-

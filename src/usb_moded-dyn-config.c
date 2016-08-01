@@ -1,6 +1,6 @@
 /**
   @file usb_moded-dyn-mode.c
- 
+
   Copyright (C) 2011 Nokia Corporation. All rights reserved.
   Copyright (C) 2013 Jolla. All rights reserved.
 
@@ -8,14 +8,14 @@
   @author: Philippe De Swert <philippe.deswert@jollamobile.com>
 
   This program is free software; you can redistribute it and/or
-  modify it under the terms of the Lesser GNU General Public License 
-  version 2 as published by the Free Software Foundation. 
+  modify it under the terms of the Lesser GNU General Public License
+  version 2 as published by the Free Software Foundation.
 
   This program is distributed in the hope that it will be useful, but
   WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
   General Public License for more details.
- 
+
   You should have received a copy of the Lesser GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
@@ -35,30 +35,37 @@
 
 static struct mode_list_elem *read_mode_file(const gchar *filename);
 
+void android_mode_data_free(android_mode_data *data)
+{
+  free(data->sysfs_path);
+  free(data->sysfs_value);
+  free(data->sysfs_reset_value);
+  free(data->softconnect);
+  free(data->softconnect_disconnect);
+  free(data->softconnect_path);
+  free(data->android_extra_sysfs_path);
+  free(data->android_extra_sysfs_value);
+  free(data->android_extra_sysfs_path2);
+  free(data->android_extra_sysfs_value2);
+  free(data->android_extra_sysfs_path3);
+  free(data->android_extra_sysfs_value3);
+  free(data->android_extra_sysfs_path4);
+  free(data->android_extra_sysfs_value4);
+  free(data);
+}
+
 void list_item_free(mode_list_elem *list_item)
 {
   free(list_item->mode_name);
   free(list_item->mode_module);
   free(list_item->network_interface);
-  free(list_item->sysfs_path);
-  free(list_item->sysfs_value);
-  free(list_item->sysfs_reset_value);
-  free(list_item->softconnect);
-  free(list_item->softconnect_disconnect);
-  free(list_item->softconnect_path);
-  free(list_item->android_extra_sysfs_path);
-  free(list_item->android_extra_sysfs_value);
-  free(list_item->android_extra_sysfs_path2);
-  free(list_item->android_extra_sysfs_value2);
-  free(list_item->android_extra_sysfs_path3);
-  free(list_item->android_extra_sysfs_value3);
-  free(list_item->android_extra_sysfs_path4);
-  free(list_item->android_extra_sysfs_value4);
   free(list_item->idProduct);
   free(list_item->idVendorOverride);
 #ifdef CONNMAN
   free(list_item->connman_tethering);
 #endif
+  if(list_item->android)
+	android_mode_data_free(list_item->android);
   free(list_item);
 }
 
@@ -132,29 +139,28 @@ static struct mode_list_elem *read_mode_file(const gchar *filename)
   list_item->mode_name = g_key_file_get_string(settingsfile, MODE_ENTRY, MODE_NAME_KEY, NULL);
   log_debug("Dynamic mode name = %s\n", list_item->mode_name);
   list_item->mode_module = g_key_file_get_string(settingsfile, MODE_ENTRY, MODE_MODULE_KEY, NULL);
-  log_debug("Dynamic mode module = %s\n", list_item->mode_module);
   list_item->appsync = g_key_file_get_integer(settingsfile, MODE_ENTRY, MODE_NEEDS_APPSYNC_KEY, NULL);
   list_item->mass_storage = g_key_file_get_integer(settingsfile, MODE_ENTRY, MODE_MASS_STORAGE, NULL);
   list_item->network = g_key_file_get_integer(settingsfile, MODE_ENTRY, MODE_NETWORK_KEY, NULL);
   list_item->network_interface = g_key_file_get_string(settingsfile, MODE_ENTRY, MODE_NETWORK_INTERFACE_KEY, NULL);
-  list_item->sysfs_path = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_SYSFS_PATH, NULL);
-  //log_debug("Dynamic mode sysfs path = %s\n", list_item->sysfs_path);
-  list_item->sysfs_value = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_SYSFS_VALUE, NULL);
-  //log_debug("Dynamic mode sysfs value = %s\n", list_item->sysfs_value);
-  list_item->sysfs_reset_value = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_SYSFS_RESET_VALUE, NULL);
-  list_item->softconnect = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_SOFTCONNECT, NULL);
-  list_item->softconnect_disconnect = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_SOFTCONNECT_DISCONNECT, NULL);
-  list_item->softconnect_path = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_SOFTCONNECT_PATH, NULL);
-  list_item->android_extra_sysfs_path = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH, NULL);
-  list_item->android_extra_sysfs_path2 = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH2, NULL);
-  list_item->android_extra_sysfs_path3 = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH3, NULL);
-  list_item->android_extra_sysfs_path4 = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH4, NULL);
-  //log_debug("Android extra mode sysfs path2 = %s\n", list_item->android_extra_sysfs_path2);
-  list_item->android_extra_sysfs_value = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE, NULL);
-  list_item->android_extra_sysfs_value2 = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE2, NULL);
-  list_item->android_extra_sysfs_value3 = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE3, NULL);
-  list_item->android_extra_sysfs_value4 = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE4, NULL);
-  //log_debug("Android extra value2 = %s\n", list_item->android_extra_sysfs_value2);
+  if(g_key_file_has_group(settingsfile, MODE_ANDROID_ENTRY))
+  {
+	list_item->android = malloc(sizeof(struct android_mode_data));
+	list_item->android->sysfs_path = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_SYSFS_PATH, NULL);
+	list_item->android->sysfs_value = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_SYSFS_VALUE, NULL);
+	list_item->android->sysfs_reset_value = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_SYSFS_RESET_VALUE, NULL);
+	list_item->android->softconnect = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_SOFTCONNECT, NULL);
+	list_item->android->softconnect_disconnect = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_SOFTCONNECT_DISCONNECT, NULL);
+	list_item->android->softconnect_path = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_SOFTCONNECT_PATH, NULL);
+	list_item->android->android_extra_sysfs_path = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH, NULL);
+	list_item->android->android_extra_sysfs_path2 = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH2, NULL);
+	list_item->android->android_extra_sysfs_path3 = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH3, NULL);
+	list_item->android->android_extra_sysfs_path4 = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_PATH4, NULL);
+	list_item->android->android_extra_sysfs_value = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE, NULL);
+	list_item->android->android_extra_sysfs_value2 = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE2, NULL);
+	list_item->android->android_extra_sysfs_value3 = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE3, NULL);
+	list_item->android->android_extra_sysfs_value4 = g_key_file_get_string(settingsfile, MODE_ANDROID_ENTRY, MODE_ANDROID_EXTRA_SYSFS_VALUE4, NULL);
+  }
   list_item->idProduct = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_IDPRODUCT, NULL);
   list_item->idVendorOverride = g_key_file_get_string(settingsfile, MODE_OPTIONS_ENTRY, MODE_IDVENDOROVERRIDE, NULL);
   list_item->nat = g_key_file_get_integer(settingsfile, MODE_OPTIONS_ENTRY, MODE_HAS_NAT, NULL);
@@ -176,6 +182,7 @@ static struct mode_list_elem *read_mode_file(const gchar *filename)
 	list_item_free(list_item);
 	return NULL;
   }
+#if 0 //TODO: check if really needed
   if(list_item->sysfs_path && list_item->sysfs_value == NULL)
   {
 	/* free list_item as it will not be used */
@@ -189,6 +196,6 @@ static struct mode_list_elem *read_mode_file(const gchar *filename)
 	return NULL;
   }
   else
-  	return(list_item);
+#endif
+	return(list_item);
 }
-

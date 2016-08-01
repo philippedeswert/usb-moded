@@ -1,18 +1,18 @@
 /*
- 
+
   Copyright (C) 2011 Nokia Corporation. All rights reserved.
 
   author: Philippe De Swert <philippe.de-swert@nokia.com>
 
   This program is free software; you can redistribute it and/or
-  modify it under the terms of the Lesser GNU General Public License 
-  version 2 as published by the Free Software Foundation. 
+  modify it under the terms of the Lesser GNU General Public License
+  version 2 as published by the Free Software Foundation.
 
   This program is distributed in the hope that it will be useful, but
   WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
   General Public License for more details.
- 
+
   You should have received a copy of the Lesser GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
@@ -33,14 +33,16 @@
 #define MODE_NETWORK_KEY		"network"
 #define MODE_MASS_STORAGE		"mass_storage"
 #define MODE_NETWORK_INTERFACE_KEY	"network_interface"
-#define MODE_OPTIONS_ENTRY		"options"
+
+/* android options */
+#define MODE_ANDROID_ENTRY		"android"
 #define MODE_SYSFS_PATH			"sysfs_path"
 #define MODE_SYSFS_VALUE		"sysfs_value"
 #define MODE_SYSFS_RESET_VALUE		"sysfs_reset_value"
 #define MODE_SOFTCONNECT		"softconnect"
 #define MODE_SOFTCONNECT_DISCONNECT	"softconnect_disconnect"
 #define MODE_SOFTCONNECT_PATH		"softconnect_path"
-/* Instead of hard-coding values that never change or have only one option, 
+/* Instead of hard-coding values that never change or have only one option,
 android engineers prefered to have sysfs entries... go figure... */
 #define MODE_ANDROID_EXTRA_SYSFS_PATH	"android_extra_sysfs_path"
 #define MODE_ANDROID_EXTRA_SYSFS_VALUE	"android_extra_sysfs_value"
@@ -52,6 +54,8 @@ android engineers prefered to have sysfs entries... go figure... */
 #define MODE_ANDROID_EXTRA_SYSFS_PATH4	"android_extra_sysfs_path4"
 #define MODE_ANDROID_EXTRA_SYSFS_VALUE4	"android_extra_sysfs_value4"
 /* For windows different modes/usb profiles need their own idProduct */
+
+#define MODE_OPTIONS_ENTRY		"options"
 #define MODE_IDPRODUCT			"idProduct"
 #define MODE_IDVENDOROVERRIDE		"idVendorOverride"
 #define MODE_HAS_NAT			"nat"
@@ -61,17 +65,10 @@ android engineers prefered to have sysfs entries... go figure... */
 #endif
 
 /**
- * Struct keeping all the data needed for the definition of a dynamic mode
+ * Struct to keep the android related data
  */
-typedef struct mode_list_elem
+typedef struct android_mode_data
 {
-  /*@{ */
-  char *mode_name;			/* mode name */
-  char *mode_module;			/* needed module for given mode */
-  int appsync;				/* requires appsync or not */
-  int network;				/* bring up network or not */
-  int mass_storage;			/* Use mass-storage functions */
-  char *network_interface;		/* Which network interface to bring up if network needs to be enabled */
   char *sysfs_path;			/* path to set sysfs options */
   char *sysfs_value;			/* option name/value to write to sysfs */
   char *sysfs_reset_value;		/* value to reset the the sysfs to default */
@@ -86,8 +83,28 @@ typedef struct mode_list_elem
   char *android_extra_sysfs_value3;	/* static value that never changes that needs to be set by sysfs :( */
   char *android_extra_sysfs_path4;	/* path for static value that never changes that needs to be set by sysfs :( */
   char *android_extra_sysfs_value4;	/* static value that never changes that needs to be set by sysfs :( */
+}android_mode_data;
+
+typedef struct libusbg_data
+{
+}libusbg_data;
+
+/**
+ * Struct keeping all the data needed for the definition of a dynamic mode
+ */
+typedef struct mode_list_elem
+{
+  /*@{ */
+  char *mode_name;			/* mode name */
+  char *mode_module;			/* needed module for given mode */
+  int appsync;				/* requires appsync or not */
+  int network;				/* bring up network or not */
+  int mass_storage;			/* Use mass-storage functions */
+  char *network_interface;		/* Which network interface to bring up if network needs to be enabled */
   char *idProduct;			/* product id to assign to a specific profile */
   char *idVendorOverride;		/* Temporary vendor override for special modes used by odms in testing/manufacturing */
+  struct android_mode_data *android;	/* pointer to struct containing the android gadget mode data */
+  struct libusbg_data *configfs;	/* pointer to the struct containing the configfs/libusbgx data */
   int nat;				/* If NAT should be set up in this mode or not */
   int dhcp_server;			/* if a DHCP server needs to be configured and started or not */
 #ifdef CONNMAN
@@ -98,6 +115,7 @@ typedef struct mode_list_elem
 
 /* diag is used to select a secondary configuration location for diagnostic purposes */
 GList *read_mode_list(int diag);
+void android_mode_data_free(android_mode_data *data);;
 void list_item_free(mode_list_elem *list_item);
 void free_mode_list(GList *modelist);
 

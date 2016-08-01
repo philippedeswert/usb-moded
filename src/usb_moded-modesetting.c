@@ -1,19 +1,19 @@
 /**
   @file usb_moded-modesetting.c
- 
+
   Copyright (C) 2010 Nokia Corporation. All rights reserved.
 
   @author: Philippe De Swert <philippe.de-swert@nokia.com>
 
   This program is free software; you can redistribute it and/or
-  modify it under the terms of the Lesser GNU General Public License 
-  version 2 as published by the Free Software Foundation. 
+  modify it under the terms of the Lesser GNU General Public License
+  version 2 as published by the Free Software Foundation.
 
   This program is distributed in the hope that it will be useful, but
   WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
   General Public License for more details.
- 
+
   You should have received a copy of the Lesser GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
@@ -171,11 +171,11 @@ static int set_mass_storage_mode(struct mode_list_elem *data)
         mount = find_mounts();
         if(mount)
         {
-        	mounts = g_strsplit(mount, ",", 0);
-             	/* check amount of mountpoints */
+		mounts = g_strsplit(mount, ",", 0);
+		/* check amount of mountpoints */
                 for(i=0 ; mounts[i] != NULL; i++)
                 {
-                	mountpoints++;
+			mountpoints++;
                 }
 
 		if(strcmp(data->mode_module, MODULE_NONE))
@@ -197,7 +197,7 @@ static int set_mass_storage_mode(struct mode_list_elem *data)
                 /* umount filesystems */
                 for(i=0 ; mounts[i] != NULL; i++)
                 {
-                	/* check if filesystem is mounted or not, if ret = 1 it is already unmounted */
+			/* check if filesystem is mounted or not, if ret = 1 it is already unmounted */
 			real_path = realpath(mounts[i], NULL);
 			if(real_path)
 				mountpath = real_path;
@@ -225,23 +225,23 @@ umount:                 command = g_strconcat("mount | grep ", mountpath, NULL);
 					}
 					else
 					{
-                                		log_err("Unmounting %s failed\n", mount);
+						log_err("Unmounting %s failed\n", mount);
 						report_mass_storage_blocker(mount, 2);
-                                        	usb_moded_send_error_signal(UMOUNT_ERROR);
-     	                                   	return(ret);
+						usb_moded_send_error_signal(UMOUNT_ERROR);
+						return(ret);
 					}
                                 }
                          }
                          else
-                         	/* already unmounted. Set return value to 0 since there is no error */
+				/* already unmounted. Set return value to 0 since there is no error */
                                 ret = 0;
-              	}
-		
+		}
+
 	        /* activate mounts after sleeping 1s to be sure enumeration happened and autoplay will work in windows*/
 		sleep(1);
                 for(i=0 ; mounts[i] != NULL; i++)
-                {       
-			
+                {
+
 			if(strcmp(data->mode_module, MODULE_NONE))
 			{
 				sprintf(command2, "echo %i  > /sys/devices/platform/musb_hdrc/gadget/gadget-lun%d/nofua", fua, i);
@@ -270,7 +270,7 @@ umount:                 command = g_strconcat("mount | grep ", mountpath, NULL);
 	/* only send data in use signal in case we actually succeed */
         if(!ret)
                 usb_moded_send_signal(DATA_IN_USE);
-	
+
 	return(ret);
 
 }
@@ -286,35 +286,35 @@ static int unset_mass_storage_mode(struct mode_list_elem *data)
         mount = find_mounts();
         if(mount)
         {
-        	mounts = g_strsplit(mount, ",", 0);
+		mounts = g_strsplit(mount, ",", 0);
                 for(i=0 ; mounts[i] != NULL; i++)
                 {
-                	/* check if it is still or already mounted, if so (ret==0) skip mounting */
+			/* check if it is still or already mounted, if so (ret==0) skip mounting */
 			real_path = realpath(mounts[i], NULL);
 			if(real_path)
 				mountpath = real_path;
 			else
 				mountpath = mounts[i];
-                	command = g_strconcat("mount | grep ", mountpath, NULL);
+			command = g_strconcat("mount | grep ", mountpath, NULL);
                         ret = system(command);
                         g_free(command);
                         if(ret)
                         {
-                        	command = g_strconcat("mount ", mountpath, NULL);
+				command = g_strconcat("mount ", mountpath, NULL);
 				log_debug("mount command = %s\n",command);
                                 ret = system(command);
                                 g_free(command);
 				/* mount returns 0 if success */
                                 if(ret != 0 )
                                 {
-                                	log_err("Mounting %s failed\n", mount);
+					log_err("Mounting %s failed\n", mount);
 					if(ret)
 					{
 						g_free(mount);
 						mount = find_alt_mount();
 						if(mount)
 						{
-                                               		command = g_strconcat("mount -t tmpfs tmpfs -o ro --size=512K ", mount, NULL);
+							command = g_strconcat("mount -t tmpfs tmpfs -o ro --size=512K ", mount, NULL);
 							log_debug("Total failure, mount ro tmpfs as fallback\n");
                                                         ret = system(command);
                                                         g_free(command);
@@ -387,7 +387,7 @@ static void report_mass_storage_blocker(const char *mountpoint, int try)
 int set_dynamic_mode(void)
 {
 
-  struct mode_list_elem *data; 
+  struct mode_list_elem *data;
   int ret = 1;
   int network = 1;
 
@@ -409,46 +409,50 @@ int set_dynamic_mode(void)
 		return(ret);
 	}
 #endif
-  /* make sure things are disabled before changing functionality */
-  if(data->softconnect_disconnect)
+  /* check if we need to deal with android gadget stuff */
+  if(data->android)
   {
-	write_to_file(data->softconnect_path, data->softconnect_disconnect);
-  }
-  /* set functionality first, then enable */
-  if(data->android_extra_sysfs_value && data->android_extra_sysfs_path)
-  {
-	ret = write_to_file(data->android_extra_sysfs_path, data->android_extra_sysfs_value);
-  }
-  if(data->android_extra_sysfs_value2 && data->android_extra_sysfs_path2)
-  {
-	write_to_file(data->android_extra_sysfs_path2, data->android_extra_sysfs_value2);
-  }
-  if(data->sysfs_path)
-  {
-	write_to_file(data->sysfs_path, data->sysfs_value);
-  }
-  if(data->idProduct)
-  {
-	/* only works for android since the idProduct is a module parameter */
-	set_android_productid(data->idProduct);
-  }
-  if(data->idVendorOverride)
-  {
-	/* only works for android since the idProduct is a module parameter */
-	set_android_vendorid(data->idVendorOverride);
-  }
+	/* make sure things are disabled before changing functionality */
+	if(data->android->softconnect_disconnect)
+	{
+		write_to_file(data->android->softconnect_path, data->android->softconnect_disconnect);
+	}
+	/* set functionality first, then enable */
+	if(data->android->android_extra_sysfs_value && data->android->android_extra_sysfs_path)
+	{
+		ret = write_to_file(data->android->android_extra_sysfs_path, data->android->android_extra_sysfs_value);
+	}
+	if(data->android->android_extra_sysfs_value2 && data->android->android_extra_sysfs_path2)
+	{
+		write_to_file(data->android->android_extra_sysfs_path2, data->android->android_extra_sysfs_value2);
+	}
+	if(data->android->sysfs_path)
+	{
+		write_to_file(data->android->sysfs_path, data->android->sysfs_value);
+	}
+	if(data->idProduct)
+	{
+		/* do it here for android since the idProduct is a module parameter or configured before gadget enabling in configfs */
+		set_android_productid(data->idProduct);
+	}
+	if(data->idVendorOverride)
+	{
+		/* do it here for android since the idProduct is a module parameter or configured before gadget enabling in configfs */
+		set_android_vendorid(data->idVendorOverride);
+	}
 
-  /* enable the device */
-  if(data->softconnect)
-  {
-	ret = write_to_file(data->softconnect_path, data->softconnect);
+	/* enable the device */
+	if(data->android->softconnect)
+	{
+		ret = write_to_file(data->android->softconnect_path, data->android->softconnect);
+	}
   }
 
   /* functionality should be enabled, so we can enable the network now */
   if(data->network)
   {
 #ifdef DEBIAN
-  	char command[256];
+	char command[256];
 
 	g_snprintf(command, 256, "ifdown %s ; ifup %s", data->network_interface, data->network_interface);
         system(command);
@@ -492,9 +496,9 @@ int set_dynamic_mode(void)
 }
 
 void unset_dynamic_mode(void)
-{ 
+{
 
-  struct mode_list_elem *data; 
+  struct mode_list_elem *data;
 
   data = get_usb_mode_data();
 
@@ -524,26 +528,29 @@ void unset_dynamic_mode(void)
 	usb_network_down(data);
   }
 
-  /* disconnect before changing functionality */
-  if(data->softconnect_disconnect)
+  if(data->android)
   {
-	write_to_file(data->softconnect_path, data->softconnect_disconnect);
-  }
-  if(data->sysfs_path)
-  {
-	write_to_file(data->sysfs_path, data->sysfs_reset_value);
-  }
-  /* restore vendorid if the mode had an override */
-  if(data->idVendorOverride)
-  {
-	char *id;
-	id = get_android_vendor_id();
-	set_android_vendorid(id);
-	g_free(id);
+	/* disconnect before changing functionality */
+	if(data->android->softconnect_disconnect)
+	{
+		write_to_file(data->android->softconnect_path, data->android->softconnect_disconnect);
+	}
+	if(data->android->sysfs_path)
+	{
+		write_to_file(data->android->sysfs_path, data->android->sysfs_reset_value);
+	}
+	/* restore vendorid if the mode had an override */
+	if(data->idVendorOverride)
+	{
+		char *id;
+		id = get_android_vendor_id();
+		set_android_vendorid(id);
+		g_free(id);
+	}
   }
 }
 
-/** clean up mode changes or extra actions to perform after a mode change 
+/** clean up mode changes or extra actions to perform after a mode change
  * @param module Name of module currently in use
  * @return 0 on success, non-zero on failure
  *
@@ -569,7 +576,7 @@ int usb_moded_mode_cleanup(const char *module)
 		/* no clean-up needs to be done when we come from charging mode. We need
 		   to check since we use fake mass-storage for charging */
 		if(!strcmp(MODE_CHARGING, get_usb_mode()) || !strcmp(MODE_CHARGING_FALLBACK, get_usb_mode()))
-		  return 0;	
+		  return 0;
 		unset_mass_storage_mode(NULL);
         }
 
@@ -578,4 +585,3 @@ int usb_moded_mode_cleanup(const char *module)
 
         return(0);
 }
-
