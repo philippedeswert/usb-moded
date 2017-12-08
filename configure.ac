@@ -35,7 +35,7 @@ AM_CONDITIONAL([DEBUG], [test x$debug = xtrue])
 
 AC_ARG_ENABLE([meegodevlock], AS_HELP_STRING([--enable-meegodevlock], [Enable Meego devicelock @<:@default=false@:>@]),
   [case "${enableval}" in
-   yes) meegodevlock=true ; CFLAGS="-DMEEGOLOCK $CFLAGS" ;;
+   yes) meegodevlock=true ; CFLAGS="-DMEEGOLOCK $CFLAGS" ; PKG_CHECK_MODULES([DSME], [dsme]) ;;
    no)  meegodevlock=false ;;
    *) AC_MSG_ERROR([bad value ${enableval} for --enable-meegodevlock]) ;;
    esac],[meegodevlock=false])
@@ -43,7 +43,7 @@ AM_CONDITIONAL([MEEGOLOCK], [test x$meegodevlock = xtrue])
 
 AC_ARG_ENABLE([mer_ssu], AS_HELP_STRING([--enable-mer-ssu], [Enable MER SSU @<:@default=false@:>@]),
   [case "${enableval}" in
-   yes) mer_ssu=true ; CFLAGS="-DUSE_MER_SSU $CFLAGS" ;;
+   yes) mer_ssu=true ; CFLAGS="-DUSE_MER_SSU $CFLAGS" ; PKG_CHECK_MODULES([SSU], [ssu-sysinfo]) ;;
    no)  mer_ssu=false ;;
    *) AC_MSG_ERROR([bad value ${enableval} for --enable-mer-ssu]) ;;
    esac],[mer_ssu=false])
@@ -75,7 +75,7 @@ AM_CONDITIONAL([CONNMAN], [test x$connman = xtrue])
 
 AC_ARG_ENABLE([systemd], AS_HELP_STRING([--enable-systemd], [Enable systemd notify interface @<:@default=false@:>@]),
   [case "${enableval}" in
-   yes) systemd=true ; CFLAGS="-DSYSTEMD $CFLAGS" ;;
+   yes) systemd=true ; CFLAGS="-DSYSTEMD $CFLAGS" ; LDFLAGS="-lsystemd $LDFLAGS"; PKG_CHECK_MODULES([SYSTEMD], [libsystemd]) ;;
    no)  systemd=false ;;
    *) AC_MSG_ERROR([bad value ${enableval} for --enable-systemd]) ;;
    esac],[systemd=false])
@@ -97,9 +97,6 @@ PKG_CHECK_MODULES([USB_MODED], [
  gio-2.0
  libudev
  libkmod
- ssu-sysinfo
- libsystemd
- dsme
 ])
 
 AC_SUBST(USB_MODED_LIBS)
