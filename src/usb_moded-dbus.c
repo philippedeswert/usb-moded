@@ -54,25 +54,31 @@ extern gboolean rescue_mode;
 */
 static void usb_moded_send_config_signal(const char *section, const char *key, const char *value)
 {
+  DBusMessage* msg = NULL;
+
   log_debug("broadcast signal %s(%s, %s, %s)\n", USB_MODE_CONFIG_SIGNAL_NAME, section, key, value);
 
   if( !have_service_name )
   {
-	log_err("config notification without service: [%s] %s=%s",
-		section, key, value);
+	log_err("config notification without service: [%s] %s=%s", section, key, value);
   }
   else if (dbus_connection_sys)
   {
-	DBusMessage* msg = dbus_message_new_signal(USB_MODE_OBJECT, USB_MODE_INTERFACE, USB_MODE_CONFIG_SIGNAL_NAME);
-	if (msg) {
-		dbus_message_append_args(msg, DBUS_TYPE_STRING, &section,
+	msg = dbus_message_new_signal(USB_MODE_OBJECT, USB_MODE_INTERFACE, USB_MODE_CONFIG_SIGNAL_NAME);
+	if (!msg)
+		return;
+	if(!dbus_message_append_args(msg, DBUS_TYPE_STRING, &section,
 		                              DBUS_TYPE_STRING, &key,
 		                              DBUS_TYPE_STRING, &value,
-		                              DBUS_TYPE_INVALID);
-		dbus_connection_send(dbus_connection_sys, msg, NULL);
-		dbus_message_unref(msg);
-	}
+		                              DBUS_TYPE_INVALID))
+		goto EXIT;
+	if(!dbus_connection_send(dbus_connection_sys, msg, NULL))
+		goto EXIT;
   }
+EXIT:
+
+if(msg)
+	dbus_message_unref(msg);
 }
 
 /** Introspect xml format string for parents of USB_MODE_OBJECT */
