@@ -42,6 +42,7 @@
 #include "usb_moded-log.h"
 #include "usb_moded-modes.h"
 #include "usb_moded-modesetting.h"
+#include "usb_moded-dbus-private.h"
 
 #ifdef USE_MER_SSU
 # include "usb_moded-ssu.h"

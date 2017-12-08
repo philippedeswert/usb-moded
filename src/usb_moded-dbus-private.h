@@ -23,6 +23,8 @@
   02110-1301 USA
 */
 
+#include <dbus/dbus.h>
+
 /** Logical name for org.freedesktop.DBus.GetNameOwner method */
 #define DBUS_GET_NAME_OWNER_REQ         "GetNameOwner"
 

@@ -253,13 +253,16 @@ void set_charger_connected(gboolean state)
 void
 rethink_usb_charging_fallback(void)
 {
+    const char *usb_mode = NULL;
+
+
     /* Cable must be connected and suitable usb-mode mode
      * selected for any of this to apply.
      */
     if( !get_usb_connection_state() )
         goto EXIT;
 
-    const char *usb_mode = get_usb_mode();
+    usb_mode = get_usb_mode();
 
     if( strcmp(usb_mode, MODE_UNDEFINED) &&
         strcmp(usb_mode, MODE_CHARGING_FALLBACK) )
@@ -1201,10 +1204,12 @@ int
 usb_moded_system_(const char *file, int line, const char *func,
 		  const char *command)
 {
+	int rc = 1;
+
 	log_debug("EXEC %s; from %s:%d: %s()",
 		  command, file, line, func);
 
-	int rc = system(command);
+	rc = system(command);
 
 	if( rc != 0 )
 		log_warning("EXEC %s; exit code is %d", command, rc);

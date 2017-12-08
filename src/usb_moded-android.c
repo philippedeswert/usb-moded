@@ -54,7 +54,8 @@ static gchar *get_android_serial(void)
     char   *res  = 0;
     FILE   *file = 0;
     size_t  size = 0;
-    char   *data = 0;
+    char   *data = 0, *beg = 0;
+    size_t len;
 
     if( !(file = fopen(path, "r")) ) {
         log_warning("%s: %s: %m", path, "can't open");
@@ -66,14 +67,14 @@ static gchar *get_android_serial(void)
         goto EXIT;
     }
 
-    char *beg = strstr(data, find);
+    beg = strstr(data, find);
     if( !beg ) {
         log_warning("%s: no serial found", path);
         goto EXIT;
     }
 
     beg += sizeof find - 1;
-    size_t len = strcspn(beg, pbrk);
+    len = strcspn(beg, pbrk);
     if( len < 1 ) {
         log_warning("%s: empty serial found", path);
         goto EXIT;
