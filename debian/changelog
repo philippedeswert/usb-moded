@@ -7,7 +7,7 @@ usb-moded (0.86.0) unstable; urgency=low
  
  -- Philippe De Swert <philippedeswert@gmail.com>  Sun, 29 May 2016 15:19:26 +0300
 
-usb-moded (0.85.2) unstable; urgency=low
+usb-moded (0.85.3) unstable; urgency=low
 
   * [hidden modes] Add support for hidden modes. Fixes:  MER#1540
 

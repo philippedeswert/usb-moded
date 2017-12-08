@@ -31,6 +31,7 @@
 #include <sys/types.h>
 
 #include <glib.h>
+#include <glob.h>
 /*
 #include <glib/gkeyfile.h>
 #include <glib/gstdio.h>
@@ -40,6 +41,7 @@
 #include "usb_moded-config-private.h"
 #include "usb_moded-log.h"
 #include "usb_moded-modes.h"
+#include "usb_moded-modesetting.h"
 
 #ifdef USE_MER_SSU
 # include "usb_moded-ssu.h"
@@ -402,75 +404,77 @@ set_config_result_t set_config_setting(const char *entry, const char *key, const
 
 set_config_result_t set_mode_setting(const char *mode)
 {
+  if (strcmp(mode, MODE_ASK) && valid_mode(mode))
+    return SET_CONFIG_ERROR;
   return (set_config_setting(MODE_SETTING_ENTRY, MODE_SETTING_KEY, mode));
 }
 
 /* Builds the string used for hidden modes, when hide set to one builds the
    new string of hidden modes when adding one, otherwise it will remove one */
-static char * make_hidden_modes_string(const char *mode_name, int hide)
+static char * make_modes_string(const char *key, const char *mode_name, int include)
 {
-  char     *hidden_new = 0;
-  char     *hidden_old = 0;
-  gchar   **hidden_arr = 0;
-  GString  *hidden_tmp = 0;
+  char     *modes_new = 0;
+  char     *modes_old = 0;
+  gchar   **modes_arr = 0;
+  GString  *modes_tmp = 0;
   int i;
 
   /* Get current comma separated list of hidden modes */
-  hidden_old = get_hidden_modes();
-  if(!hidden_old)
+  modes_old = get_conf_string(MODE_SETTING_ENTRY, key);
+  if(!modes_old)
   {
-    hidden_old = g_strdup("");
+    modes_old = g_strdup("");
   }
 
-  hidden_arr = g_strsplit(hidden_old, ",", 0);
+  modes_arr = g_strsplit(modes_old, ",", 0);
 
-  hidden_tmp = g_string_new(NULL);
+  modes_tmp = g_string_new(NULL);
 
-  for(i = 0; hidden_arr[i] != NULL; i++)
+  for(i = 0; modes_arr[i] != NULL; i++)
   {
-    if(strlen(hidden_arr[i]) == 0)
+    if(strlen(modes_arr[i]) == 0)
     {
       /* Skip any empty strings */
       continue;
     }
 
-    if(!strcmp(hidden_arr[i], mode_name))
+    if(!strcmp(modes_arr[i], mode_name))
     {
       /* When unhiding, just skip all matching entries */
-      if(!hide)
+      if(!include)
         continue;
 
       /* When hiding, keep the 1st match and ignore the rest */
-      hide = 0;
+      include = 0;
     }
 
-    if(hidden_tmp->len > 0)
-      hidden_tmp = g_string_append(hidden_tmp, ",");
-    hidden_tmp = g_string_append(hidden_tmp, hidden_arr[i]);
+    if(modes_tmp->len > 0)
+      modes_tmp = g_string_append(modes_tmp, ",");
+    modes_tmp = g_string_append(modes_tmp, modes_arr[i]);
   }
 
-  if(hide)
+  if(include)
   {
     /* Adding a hidden mode and no matching entry was found */
-    if(hidden_tmp->len > 0)
-      hidden_tmp = g_string_append(hidden_tmp, ",");
-    hidden_tmp = g_string_append(hidden_tmp, mode_name);
+    if(modes_tmp->len > 0)
+      modes_tmp = g_string_append(modes_tmp, ",");
+    modes_tmp = g_string_append(modes_tmp, mode_name);
   }
 
-  hidden_new = g_string_free(hidden_tmp, FALSE), hidden_tmp = 0;
+  modes_new = g_string_free(modes_tmp, FALSE), modes_tmp = 0;
 
-  g_strfreev(hidden_arr), hidden_arr = 0;
+  g_strfreev(modes_arr), modes_arr = 0;
 
-  g_free(hidden_old), hidden_old = 0;
+  g_free(modes_old), modes_old = 0;
 
-  return hidden_new;
+  return modes_new;
 }
 
 set_config_result_t set_hide_mode_setting(const char *mode)
 {
   set_config_result_t ret = SET_CONFIG_UNCHANGED;
 
-  char *hidden_modes = make_hidden_modes_string(mode, 1);
+  char *hidden_modes = make_modes_string(MODE_HIDE_KEY, mode, 1);
 
   if( hidden_modes ) {
     ret = set_config_setting(MODE_SETTING_ENTRY, MODE_HIDE_KEY, hidden_modes);
@@ -479,6 +483,7 @@ set_config_result_t set_hide_mode_setting(const char *mode)
   if(ret == SET_CONFIG_UPDATED) {
       send_hidden_modes_signal();
       send_supported_modes_signal();
+      send_available_modes_signal();
   }
 
   g_free(hidden_modes);
@@ -490,7 +495,7 @@ set_config_result_t set_unhide_mode_setting(const char *mode)
 {
   set_config_result_t ret = SET_CONFIG_UNCHANGED;
 
-  char *hidden_modes = make_hidden_modes_string(mode, 0);
+  char *hidden_modes = make_modes_string(MODE_HIDE_KEY, mode, 0);
 
   if( hidden_modes ) {
     ret = set_config_setting(MODE_SETTING_ENTRY, MODE_HIDE_KEY, hidden_modes);
@@ -499,9 +504,51 @@ set_config_result_t set_unhide_mode_setting(const char *mode)
   if(ret == SET_CONFIG_UPDATED) {
       send_hidden_modes_signal();
       send_supported_modes_signal();
+      send_available_modes_signal();
   }
 
   g_free(hidden_modes);
+
+  return(ret);
+}
+
+set_config_result_t set_mode_whitelist(const char *whitelist)
+{
+  set_config_result_t ret = set_config_setting(MODE_SETTING_ENTRY, MODE_WHITELIST_KEY, whitelist);
+
+  if(ret == SET_CONFIG_UPDATED) {
+    char *mode_setting;
+    const char *current_mode;
+
+    mode_setting = get_mode_setting();
+    if (strcmp(mode_setting, MODE_ASK) && valid_mode(mode_setting))
+      set_mode_setting(MODE_ASK);
+    g_free(mode_setting);
+
+    current_mode = get_usb_mode();
+    if (strcmp(current_mode, MODE_CHARGING_FALLBACK) && strcmp(current_mode, MODE_ASK) && valid_mode(current_mode)) {
+      usb_moded_mode_cleanup(get_usb_module());
+      set_usb_mode(MODE_CHARGING_FALLBACK);
+    }
+
+    usb_moded_send_whitelisted_modes_signal(whitelist);
+    send_available_modes_signal();
+  }
+
+  return ret;
+}
+
+set_config_result_t set_mode_in_whitelist(const char *mode, int allowed)
+{
+  set_config_result_t ret = SET_CONFIG_UNCHANGED;
+
+  char *whitelist = make_modes_string(MODE_WHITELIST_KEY, mode, allowed);
+
+  if (whitelist) {
+    ret = set_mode_whitelist(whitelist);
+  }
+
+  g_free(whitelist);
 
   return(ret);
 }
@@ -608,134 +655,159 @@ end:
    return(ret);
 }
 
+/**
+ * Merge value from one keyfile to another
+ *
+ * Existing values will be overridden
+ *
+ * @param dest keyfile to modify
+ * @param srce keyfile to merge from
+ * @param grp  value group to merge
+ * @param key  value key to merge
+ */
+static void merge_key(GKeyFile *dest, GKeyFile *srce,
+			const char *grp, const char *key)
+{
+	gchar *val = g_key_file_get_value(srce, grp, key, 0);
+	if( val ) {
+		log_debug("[%s] %s = %s", grp, key, val);
+		g_key_file_set_value(dest, grp, key, val);
+		g_free(val);
+	}
+}
+
+/**
+ * Merge group of values from one keyfile to another
+ *
+ * @param dest keyfile to modify
+ * @param srce keyfile to merge from
+ * @param grp  value group to merge
+ */
+static void merge_group(GKeyFile *dest, GKeyFile *srce,
+			const char *grp)
+{
+	gchar **key = g_key_file_get_keys(srce, grp, 0, 0);
+	if( key ) {
+		for( size_t i = 0; key[i]; ++i )
+			merge_key(dest, srce, grp, key[i]);
+		g_strfreev(key);
+	}
+}
+
+/**
+ * Merge all groups and values from one keyfile to another
+ *
+ * @param dest keyfile to modify
+ * @param srce keyfile to merge from
+ */
+static void merge_file(GKeyFile *dest, GKeyFile *srce)
+{
+	gchar **grp = g_key_file_get_groups(srce, 0);
+
+	if( grp ) {
+		for( size_t i = 0; grp[i]; ++i )
+			merge_group(dest, srce, grp[i]);
+		g_strfreev(grp);
+	}
+}
+
+/**
+ * Callback function for logging errors within glob()
+ *
+ * @param path path to file/dir where error occurred
+ * @param err  errno that occurred
+ *
+ * @return 0 (= do not stop glob)
+ */
+static int glob_error_cb(const char *path, int err)
+{
+	log_debug("%s: glob: %s", path, g_strerror(err));
+	return 0;
+}
+
+/**
+ * Read *.ini files on CONFIG_FILE_DIR in the order of [0-9][A-Z][a-z]
+ *
+ * @return the in memory value-pair file.
+ */
+static GKeyFile *read_ini_files(void)
+{
+	static const char pattern[] = CONFIG_FILE_DIR"/*.ini";
+
+	GKeyFile *ini = g_key_file_new();
+	glob_t gb;
+
+	memset(&gb, 0, sizeof gb);
+
+	if( glob(pattern, 0, glob_error_cb, &gb) != 0 ) {
+		log_debug("no configuration ini-files found");
+		g_key_file_free(ini);
+		ini = NULL;
+		goto exit;
+	}
+
+	for( size_t i = 0; i < gb.gl_pathc; ++i ) {
+		const char *path = gb.gl_pathv[i];
+		GError *err	= 0;
+		GKeyFile *tmp = g_key_file_new();
+
+		if( !g_key_file_load_from_file(tmp, path, 0, &err) ) {
+			log_debug("%s: can't load: %s", path, err->message);
+		} else {
+			log_debug("processing %s ...", path);
+			merge_file(ini, tmp);
+		}
+		g_clear_error(&err);
+		g_key_file_free(tmp);
+	}
+exit:
+	globfree(&gb);
+	return ini;
+}
+
+/**
+ * Read the *.ini files and create/overwrite FS_MOUNT_CONFIG_FILE with
+ * the merged data.
+ *
+ * @return 0 on failure
+ */
 int conf_file_merge(void)
 {
-  GDir *confdir;
-  struct stat fileinfo, dir;
-  char *mode = 0, *ip = 0, *gateway = 0, *udev = 0, *hide = 0;
-  gchar *filename_full;
-  const gchar *filename;
   GString *keyfile_string = NULL;
-  GKeyFile *settingsfile;
-  int ret = 0, test = 0, conffile_created = 0;
+  GKeyFile *settingsfile,*tempfile;
+  int ret = 0;
 
-  confdir = g_dir_open(CONFIG_FILE_DIR, 0, NULL);
-  if(!confdir)
-  {
-      log_debug("No configuration. Creating defaults.\n");
-      create_conf_file();
-      /* since there was no configuration at all there is no info to be merged */
-      return (ret);
-  }
-
-  if (stat(FS_MOUNT_CONFIG_FILE, &fileinfo) == -1) 
-  {
-	/* conf file not created yet, make default and merge all */
-      	create_conf_file();
-	conffile_created = 1;
-  }
-
-  /* config file is created, so the dir must exists */
-  if(stat(CONFIG_FILE_DIR, &dir))
-  {
-	log_warning("Directory still does not exists. FS might be ro/corrupted!\n");
-	ret = 1;
-	goto end;
-  }
-
-  /* st_mtime is changed by file modifications, st_mtime of a directory is changed by the creation or deletion of files in that directory.
-  So if the st_mtime of the config file is equal to the directory time we can be sure the config is untouched and we do not need 
-  to re-merge the config.
-  */
-  if(fileinfo.st_mtime == dir.st_mtime)
-  {
-	/* if a conffile was created, the st_mtime would have been updated so this check will miss information that might be there already,
-	   like after a config file removal for example. So we run a merge anyway if we needed to create the conf file */
-	if(!conffile_created)
-		goto end;
-  }
-  log_debug("Merging/creating configuration.\n");
-  keyfile_string = g_string_new(NULL);
-  /* check each ini file and get contents */
-  while((filename = g_dir_read_name(confdir)) != NULL)
-  {
-	if(!strstr(filename, ".ini"))
+	settingsfile = read_ini_files();
+	if (!settingsfile)
 	{
-		/* skip this file as it might be a dir or not an ini file */
-		continue;
+		log_debug("No configuration. Creating defaults.");
+		create_conf_file();
+		/* There was no configuration so no info to be merged */
+		return ret;
 	}
-	filename_full = g_strconcat(CONFIG_FILE_DIR, "/", filename, NULL);
-	log_debug("filename = %s\n", filename_full);
-	if(!strcmp(filename_full, FS_MOUNT_CONFIG_FILE))
-	{
-		/* store mode info to add it later as we want to keep it */
-		mode = get_mode_setting();
-		/* store udev path (especially important for the upgrade path */
-		udev = find_udev_path();
-		/* store network info */
-		ip = get_conf_string(NETWORK_ENTRY, NETWORK_IP_KEY);
-		gateway = get_conf_string(NETWORK_ENTRY, NETWORK_GATEWAY_KEY);
-		/* store hidden modes */
-		hide = get_hidden_modes();
-		continue;
-	}
-	/* load contents of file, if it fails skip to next one */
-	settingsfile = g_key_file_new();
- 	test = g_key_file_load_from_file(settingsfile, filename_full, G_KEY_FILE_KEEP_COMMENTS, NULL);
-	if(!test)
-	{
-		log_debug("%d failed loading config file %s\n", test, filename_full);
-		goto next;
-	}
-        log_debug("file data = %s\n", g_key_file_to_data(settingsfile, NULL, NULL));
-	keyfile_string = g_string_append(keyfile_string, g_key_file_to_data(settingsfile, NULL, NULL));
-	log_debug("keyfile_string = %s\n", keyfile_string->str);
-  	g_key_file_free(settingsfile);
 
-next:	
-	g_free(filename_full);
-  }
+	tempfile = g_key_file_new();
+	if (g_key_file_load_from_file(tempfile, FS_MOUNT_CONFIG_FILE,
+				G_KEY_FILE_NONE,NULL)) {
+		if (!g_strcmp0(g_key_file_to_data(settingsfile, NULL, NULL),
+				g_key_file_to_data(tempfile, NULL, NULL)))
+			goto out;
+	}
 
-  if(keyfile_string)
-  {
-	/* write out merged config file */
-  	/* g_file_set_contents returns 1 on succes, this function returns 0 */
-  	ret = !g_file_set_contents(FS_MOUNT_CONFIG_FILE, keyfile_string->str, -1, NULL);
-	g_string_free(keyfile_string, TRUE);
-	if(mode)
-	{
-		set_mode_setting(mode);
+	log_debug("Merging configuration");
+	keyfile_string = g_string_new(NULL);
+	keyfile_string = g_string_append(keyfile_string,
+					g_key_file_to_data(settingsfile,
+							NULL, NULL));
+	if (keyfile_string) {
+		ret = !g_file_set_contents(FS_MOUNT_CONFIG_FILE,
+						keyfile_string->str,-1, NULL);
+		g_string_free(keyfile_string, TRUE);
 	}
-	if(udev)
-	{
-		set_config_setting(UDEV_PATH_ENTRY, UDEV_PATH_KEY, udev);
-	}
-	/* check if no network data came from an ini file */
-	if( get_conf_string(NETWORK_ENTRY, NETWORK_IP_KEY))
-		goto cleanup;
-	if(ip) 
-		set_network_setting(NETWORK_IP_KEY, ip);
-	if(gateway)
-		set_network_setting(NETWORK_GATEWAY_KEY, gateway);
-	/* re-add hidden modes info */
-	if(hide)
-		set_hide_mode_setting(hide);
-  }
-  else
-	ret = 1;
-cleanup:
-  if(mode)
-	free(mode);
-  if(udev)
-	free(udev);
-  if(ip)
-	free(ip);
-  if(gateway)
-	free(gateway);
-	
-end:
-  g_dir_close(confdir);
-  return(ret);
+out:
+	g_key_file_free(tempfile);
+	g_key_file_free(settingsfile);
+	return ret;
 }
 
 char * get_android_manufacturer(void)
@@ -781,6 +853,10 @@ char * get_android_product_id(void)
 char * get_hidden_modes(void)
 {
   return(get_conf_string(MODE_SETTING_ENTRY, MODE_HIDE_KEY));
+}
+char * get_mode_whitelist(void)
+{
+  return(get_conf_string(MODE_SETTING_ENTRY, MODE_WHITELIST_KEY));
 }
 
 int check_android_section(void)

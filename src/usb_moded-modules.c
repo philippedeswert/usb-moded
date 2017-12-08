@@ -2,10 +2,12 @@
   @file usb_moded-modules.c
  
   Copyright (C) 2010 Nokia Corporation. All rights reserved.
-  Copyright (C) 2012-2015 Jolla. All rights reserved.
+  Copyright (C) 2012-2016 Jolla. All rights reserved.
 
   @author: Philippe De Swert <philippe.de-swert@nokia.com>
   @author: Philippe De Swert <philippe.deswert@jollamobile.com>
+  @author: Slava Monich <slava.monich@jolla.com>
+  @author: Simo Piiroinen <simo.piiroinen@jollamobile.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the Lesser GNU General Public License 
@@ -43,7 +45,7 @@
 
 /* kmod context - initialized at start in usb_moded_init by ctx_init()
    and cleaned up by ctx_cleanup() functions */
-struct kmod_ctx *ctx;
+static struct kmod_ctx *ctx = 0;
 
 /* kmod module init */
 void usb_moded_module_ctx_init(void)
@@ -55,7 +57,8 @@ void usb_moded_module_ctx_init(void)
 /* kmod module cleanup */
 void usb_moded_module_ctx_cleanup(void)
 {
-  kmod_unref(ctx);
+    if( ctx )
+	kmod_unref(ctx), ctx = 0;
 }
 
 /** load module 
@@ -198,7 +201,7 @@ int usb_moded_module_cleanup(const char *module)
 	if(!strcmp(module, MODULE_NONE))
 		goto END;
 	/* wait a bit for all components listening on dbus to clean up their act 
-	sleep(2); */
+	usb_moded_sleep(2); */
 	/* check if things were not reconnected in that timespan 
 	if(get_usb_connection_state())
 		return(0);
@@ -221,7 +224,7 @@ int usb_moded_module_cleanup(const char *module)
 	while(failure)
 	{
 		/* module did not get unloaded. We will wait a bit and try again */
-		sleep(1);
+		usb_moded_sleep(1);
 		/* send the REALLY  disconnect message */
 		usb_moded_send_signal(USB_REALLY_DISCONNECT);
 		failure = usb_moded_unload_module(module);

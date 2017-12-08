@@ -2,8 +2,13 @@
   @file usb_moded-modesetting.c
  
   Copyright (C) 2010 Nokia Corporation. All rights reserved.
+  Copyright (C) 2013-2016 Jolla Ltd.
 
   @author: Philippe De Swert <philippe.de-swert@nokia.com>
+  @author: Philippe De Swert <philippe.deswert@jollamobile.com>
+  @author: Bernd Wachter <bernd.wachter@jollamobile.com>
+  @author: Slava Monich <slava.monich@jolla.com>
+  @author: Simo Piiroinen <simo.piiroinen@jollamobile.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the Lesser GNU General Public License 
@@ -25,6 +30,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <sys/stat.h>
 #include <limits.h>
 
@@ -42,10 +48,68 @@
 #include "usb_moded-network.h"
 #include "usb_moded-android.h"
 
+
+static char *read_from_file(const char *path, size_t maxsize);
+
+static GHashTable *tracked_values = 0;
+
+static void usb_moded_mode_track_value(const char *path, const char *text)
+{
+    if( !tracked_values || !path )
+        goto EXIT;
+
+    if( text )
+        g_hash_table_replace(tracked_values, g_strdup(path), g_strdup(text));
+    else
+        g_hash_table_remove(tracked_values, path);
+
+EXIT:
+    return;
+}
+
+void usb_moded_mode_verify_values(void)
+{
+    GHashTableIter iter;
+    gpointer key, value;
+
+    if( !tracked_values )
+        goto EXIT;
+
+    g_hash_table_iter_init(&iter, tracked_values);
+    while( g_hash_table_iter_next(&iter, &key, &value) )
+    {
+        const char *path = key;
+        const char *text = value;
+
+        char *curr = read_from_file(path, 0x1000);
+
+        if( g_strcmp0(text, curr) ) {
+            /* There might be case mismatch between hexadecimal
+             * values used in configuration files vs what we get
+             * back when reading from kernel interfaces. */
+            if( text && curr && !g_ascii_strcasecmp(text, curr) ) {
+                log_debug("unexpected change '%s' : '%s' -> '%s' (case diff only)", path,
+                          text ?: "???",
+                          curr ?: "???");
+            }
+            else {
+                log_warning("unexpected change '%s' : '%s' -> '%s'", path,
+                            text ?: "???",
+                            curr ?: "???");
+            }
+            usb_moded_mode_track_value(path, curr);
+        }
+
+        free(curr);
+    }
+
+EXIT:
+    return;
+}
+
 static void report_mass_storage_blocker(const char *mountpoint, int try);
 static guint delayed_network = 0;
 
-#if LOG_ENABLE_DEBUG
 static char *strip(char *str)
 {
   unsigned char *src = (unsigned char *)str;
@@ -98,27 +162,47 @@ cleanup:
   if(fd != -1) close(fd);
   return text;
 }
-#endif /* LOG_ENABLE_DEBUG */
 
-int write_to_file(const char *path, const char *text)
+int write_to_file_real(const char *file, int line, const char *func,
+                       const char *path, const char *text)
 {
   int err = -1;
   int fd = -1;
   size_t todo = 0;
+  char *prev = 0;
+  bool  clear = false;
 
   /* if either path or the text to be written are not there
      we return an error */
   if(!text || !path)
 	return err;
 
-#if LOG_ENABLE_DEBUG
-  if(log_level >= LOG_DEBUG)
-  {
-    char *prev = read_from_file(path, 0x1000);
-    log_debug("WRITE '%s' : '%s' --> '%s'", path, prev ?: "???", text);
-    free(prev);
+  /* When attempting to clear ffs function list, writing an
+   * empty string is ignored and accomplishes nothing - while
+   * writing non-existing function clears the list but returns
+   * write error.
+   *
+   * Treat "none" (which is used as place-holder value in both
+   * configuration files and usb-moded sources) and "" similarly:
+   * - Write invalid function name to sysfs
+   * - Ignore resulting write error under default logging level
+   * - Assume reading from sysfs will result in empty string
+   */
+  if( !strcmp(path, "/sys/class/android_usb/android0/functions") ) {
+    if( !strcmp(text, "") || !strcmp(text, "none") ) {
+      text = "none";
+      clear = true;
+    }
   }
-#endif
+
+  /* If the file can be read, it also means we can later check that
+   * the file retains the value we are about to write here. */
+  if( (prev = read_from_file(path, 0x1000)) )
+        usb_moded_mode_track_value(path, clear ? "" : text);
+
+  log_debug("%s:%d: %s(): WRITE '%s' : '%s' --> '%s'",
+            file, line, func,
+            path, prev ?: "???", text);
 
   todo  = strlen(text);
 
@@ -134,7 +218,10 @@ int write_to_file(const char *path, const char *text)
     ssize_t n = TEMP_FAILURE_RETRY(write(fd, text, todo));
     if( n < 0 )
     {
-      log_warning("write(%s): %m", path);
+        if( clear && errno == EINVAL )
+            log_debug("write(%s): %m (expected failure)", path);
+        else
+            log_warning("write(%s): %m", path);
       goto cleanup;
     }
     todo -= n;
@@ -146,6 +233,8 @@ int write_to_file(const char *path, const char *text)
 cleanup:
 
   if( fd != -1 ) TEMP_FAILURE_RETRY(close(fd));
+
+  free(prev);
 
   return err;
 }
@@ -189,7 +278,7 @@ static int set_mass_storage_mode(struct mode_list_elem *data)
 				usb_moded_unload_module(MODULE_MASS_STORAGE);
 				sprintf(command2, "modprobe %s luns=%d \n", MODULE_MASS_STORAGE, mountpoints);
 				log_debug("usb-load command = %s \n", command2);
-				ret = system(command2);
+				ret = usb_moded_system(command2);
 				if(ret)
 					return(ret);
 			}
@@ -204,21 +293,21 @@ static int set_mass_storage_mode(struct mode_list_elem *data)
 			else
 				mountpath = mounts[i];
 umount:                 command = g_strconcat("mount | grep ", mountpath, NULL);
-                        ret = system(command);
+                        ret = usb_moded_system(command);
                         g_free(command);
                         if(!ret)
                         {
 				/* no check for / needed as that will fail to umount anyway */
 				command = g_strconcat("umount ", mountpath, NULL);
                                 log_debug("unmount command = %s\n", command);
-                                ret = system(command);
+                                ret = usb_moded_system(command);
                                 g_free(command);
                                 if(ret != 0)
                                 {
 					if(try != 3)
 					{
 						try++;
-						sleep(1);
+						usb_moded_sleep(1);
 						log_err("Umount failed. Retrying\n");
 						report_mass_storage_blocker(mount, 1);
 						goto umount;
@@ -238,7 +327,7 @@ umount:                 command = g_strconcat("mount | grep ", mountpath, NULL);
               	}
 		
 	        /* activate mounts after sleeping 1s to be sure enumeration happened and autoplay will work in windows*/
-		sleep(1);
+		usb_moded_sleep(1);
                 for(i=0 ; mounts[i] != NULL; i++)
                 {       
 			
@@ -246,7 +335,7 @@ umount:                 command = g_strconcat("mount | grep ", mountpath, NULL);
 			{
 				sprintf(command2, "echo %i  > /sys/devices/platform/musb_hdrc/gadget/gadget-lun%d/nofua", fua, i);
 				log_debug("usb lun = %s active\n", command2);
-				system(command2);
+				usb_moded_system(command2);
 				sprintf(command2, "/sys/devices/platform/musb_hdrc/gadget/gadget-lun%d/file", i);
 				log_debug("usb lun = %s active\n", command2);
 				write_to_file(command2, mounts[i]);
@@ -296,13 +385,13 @@ static int unset_mass_storage_mode(struct mode_list_elem *data)
 			else
 				mountpath = mounts[i];
                 	command = g_strconcat("mount | grep ", mountpath, NULL);
-                        ret = system(command);
+                        ret = usb_moded_system(command);
                         g_free(command);
                         if(ret)
                         {
                         	command = g_strconcat("mount ", mountpath, NULL);
 				log_debug("mount command = %s\n",command);
-                                ret = system(command);
+                                ret = usb_moded_system(command);
                                 g_free(command);
 				/* mount returns 0 if success */
                                 if(ret != 0 )
@@ -316,7 +405,7 @@ static int unset_mass_storage_mode(struct mode_list_elem *data)
 						{
                                                		command = g_strconcat("mount -t tmpfs tmpfs -o ro --size=512K ", mount, NULL);
 							log_debug("Total failure, mount ro tmpfs as fallback\n");
-                                                        ret = system(command);
+                                                        ret = usb_moded_system(command);
                                                         g_free(command);
                                                 }
 						usb_moded_send_error_signal(RE_MOUNT_FAILED);
@@ -337,7 +426,7 @@ static int unset_mass_storage_mode(struct mode_list_elem *data)
 			{
 				sprintf(command2, "echo \"\"  > /sys/devices/platform/musb_hdrc/gadget/gadget-lun%d/file", i);
 				log_debug("usb lun = %s inactive\n", command2);
-				system(command2);
+				usb_moded_system(command2);
 			}
                  }
                  g_strfreev(mounts);
@@ -358,7 +447,7 @@ static void report_mass_storage_blocker(const char *mountpoint, int try)
 
   lsof_command = g_strconcat("lsof ", mountpoint, NULL);
 
-  if( (stream = popen(lsof_command, "r")) )
+  if( (stream = usb_moded_popen(lsof_command, "r")) )
   {
     char *text = 0;
     size_t size = 0;
@@ -451,7 +540,7 @@ int set_dynamic_mode(void)
   	char command[256];
 
 	g_snprintf(command, 256, "ifdown %s ; ifup %s", data->network_interface, data->network_interface);
-        system(command);
+        usb_moded_system(command);
 #else
 	usb_network_down(data);
 	network = usb_network_up(data);
@@ -477,7 +566,7 @@ int set_dynamic_mode(void)
   if(data->appsync && !ret)
   {
 	/* let's sleep for a bit (350ms) to allow interfaces to settle before running postsync */
-	usleep(350000);
+	usb_moded_msleep(350);
 	activate_sync_post(data->mode_name);
   }
 
@@ -541,6 +630,12 @@ void unset_dynamic_mode(void)
 	set_android_vendorid(id);
 	g_free(id);
   }
+
+  /* enable after the changes have been made */
+  if(data->softconnect)
+  {
+	write_to_file(data->softconnect_path, data->softconnect);
+  }
 }
 
 /** clean up mode changes or extra actions to perform after a mode change 
@@ -561,7 +656,7 @@ int usb_moded_mode_cleanup(const char *module)
 
 #ifdef APP_SYNC
 	/* Stop applications started due to entering this mode */
-	appsync_stop(0);
+	appsync_stop(FALSE);
 #endif /* APP_SYNC */
 
         if(!strcmp(module, MODULE_MASS_STORAGE)|| !strcmp(module, MODULE_FILE_STORAGE))
@@ -579,3 +674,21 @@ int usb_moded_mode_cleanup(const char *module)
         return(0);
 }
 
+/** Allocate modesetting related dynamic resouces
+ */
+void usb_moded_mode_init(void)
+{
+    if( !tracked_values ) {
+        tracked_values = g_hash_table_new_full(g_str_hash, g_str_equal,
+                                               g_free, g_free);
+    }
+}
+
+/** Release modesetting related dynamic resouces
+ */
+void usb_moded_mode_quit(void)
+{
+    if( tracked_values ) {
+        g_hash_table_unref(tracked_values), tracked_values = 0;
+    }
+}

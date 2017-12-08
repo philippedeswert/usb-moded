@@ -1,10 +1,10 @@
 Name:     usb-moded
-Version:  0.85
+Version:  0.86.0+mer20
 Release:  2
 Summary:  USB mode controller
 Group:    System/System Control
 License:  LGPLv2
-URL:      https://github.com/nemomobile/usb-moded
+URL:      https://git.merproject.org/mer-core/usb-moded
 Source0:  %{name}-%{version}.tar.bz2
 Source1:  usb_moded.conf
 
@@ -14,7 +14,9 @@ BuildRequires: pkgconfig(glib-2.0)
 BuildRequires: pkgconfig(udev)
 BuildRequires: pkgconfig(libkmod)
 BuildRequires: doxygen
-BuildRequires: pkgconfig(libsystemd-daemon)
+BuildRequires: pkgconfig(libsystemd)
+BuildRequires: pkgconfig(ssu-sysinfo)
+BuildRequires: pkgconfig(dsme)
 
 Requires: lsof
 Requires: usb-moded-configs
@@ -168,6 +170,20 @@ system bus.
 
 This package contains the mtp mode config.
 
+%package mtp-mode-android-ffs
+Summary:  USB mode controller - droid mtp mode config
+Group:  Config
+
+%description mtp-mode-android-ffs
+Usb_moded is a daemon to control the USB states. For this
+it loads unloads the relevant usb gadget modules, keeps track
+of the filesystem(s) and notifies about changes on the DBUS
+system bus.
+
+This package contains the mtp mode config for devices that
+have android kernel but still implement mtp functionality
+via ffs.
+
 %package pc-suite-mode-android
 Summary:  USB mode controller - android pc suite  mode config
 Group:  Config
@@ -306,8 +322,8 @@ when the UI fails.
 %setup -q
 
 %build
-%autogen
-%configure --enable-app-sync --enable-meegodevlock --enable-debug --enable-connman --enable-systemd --enable-mer-ssu
+test -e Makefile || (%autogen)
+test -e Makefile || (%configure --enable-app-sync --enable-meegodevlock --enable-debug --enable-connman --enable-systemd --enable-mer-ssu)
 make all doc %{?_smp_mflags}
 
 %install
@@ -430,6 +446,10 @@ systemctl daemon-reload || :
 %files mtp-mode-android
 %defattr(-,root,root,-)
 %{_sysconfdir}/usb-moded/dyn-modes/mtp_mode-android.ini
+
+%files mtp-mode-android-ffs
+%defattr(-,root,root,-)
+%{_sysconfdir}/usb-moded/dyn-modes/mtp_mode-android-ffs.ini
 
 %files pc-suite-mode-android
 %defattr(-,root,root,-)

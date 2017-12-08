@@ -40,7 +40,13 @@
 #include "usb_moded-network.h"
 #include "usb_moded-log.h"
 
+#define INIT_DONE_INTERFACE "com.nokia.startup.signal"
+#define INIT_DONE_SIGNAL    "init_done"
+#define INIT_DONE_MATCH     "type='signal',interface='"INIT_DONE_INTERFACE"',member='"INIT_DONE_SIGNAL"'"
+
 static DBusConnection *dbus_connection_sys = NULL;
+static gboolean        have_service_name   = FALSE;
+
 extern gboolean rescue_mode;
 
 /**
@@ -48,8 +54,14 @@ extern gboolean rescue_mode;
 */
 static void usb_moded_send_config_signal(const char *section, const char *key, const char *value)
 {
-  log_debug(USB_MODE_CONFIG_SIGNAL_NAME ": %s %s %s\n", section, key, value);
-  if (dbus_connection_sys)
+  log_debug("broadcast signal %s(%s, %s, %s)\n", USB_MODE_CONFIG_SIGNAL_NAME, section, key, value);
+
+  if( !have_service_name )
+  {
+	log_err("config notification without service: [%s] %s=%s",
+		section, key, value);
+  }
+  else if (dbus_connection_sys)
   {
 	DBusMessage* msg = dbus_message_new_signal(USB_MODE_OBJECT, USB_MODE_INTERFACE, USB_MODE_CONFIG_SIGNAL_NAME);
 	if (msg) {
@@ -126,6 +138,19 @@ static const char introspect_usb_moded[] =
 "    <method name=\"" USB_MODE_LIST "\">\n"
 "      <arg name=\"modes\" type=\"s\" direction=\"out\"/>\n"
 "    </method>\n"
+"    <method name=\"" USB_MODE_AVAILABLE_MODES_GET "\">\n"
+"      <arg name=\"modes\" type=\"s\" direction=\"out\"/>\n"
+"    </method>\n"
+"    <method name=\"" USB_MODE_WHITELISTED_MODES_GET "\">\n"
+"      <arg name=\"modes\" type=\"s\" direction=\"out\"/>\n"
+"    </method>\n"   
+"    <method name=\"" USB_MODE_WHITELISTED_MODES_SET "\">"
+"      <arg name=\"modes\" type=\"s\" direction=\"in\"/>"
+"    </method>"
+"    <method name=\"" USB_MODE_WHITELISTED_SET "\">"
+"      <arg name=\"mode\" type=\"s\" direction=\"in\"/>"
+"      <arg name=\"whitelisted\" type=\"b\" direction=\"in\"/>"
+"     </method>"
 "    <method name=\"" USB_MODE_RESCUE_OFF "\"/>\n"
 "    <signal name=\"" USB_MODE_SIGNAL_NAME "\">\n"
 "      <arg name=\"mode\" type=\"s\"/>\n"
@@ -135,6 +160,12 @@ static const char introspect_usb_moded[] =
 "    </signal>\n"
 "    <signal name=\"" USB_MODE_SUPPORTED_MODES_SIGNAL_NAME "\">\n"
 "      <arg name=\"modes\" type=\"s\"/>\n"
+"    </signal>\n"
+"    <signal name=\"" USB_MODE_AVAILABLE_MODES_SIGNAL_NAME "\">\n"
+"      <arg name=\"modes\" type=\"s\">\n"
+"    </signal>\n"
+"    <signal name=\"" USB_MODE_WHITELISTED_MODES_SIGNAL_NAME "\">\n"
+"      <arg name=\"modes\" type=\"s\">\n"
 "    </signal>\n"
 "    <signal name=\"" USB_MODE_CONFIG_SIGNAL_NAME "\">\n"
 "      <arg name=\"section\" type=\"s\"/>\n"
@@ -156,6 +187,18 @@ static DBusHandlerResult msg_handler(DBusConnection *const connection, DBusMessa
   (void)user_data;
 
   if(!interface || !member || !object) goto EXIT;
+
+  if( type == DBUS_MESSAGE_TYPE_SIGNAL )
+  {
+	if( !strcmp(interface, INIT_DONE_INTERFACE) && !strcmp(member, INIT_DONE_SIGNAL) ) {
+		/* Auto-disable rescue mode when bootup is finished */
+		if( rescue_mode ) {
+			rescue_mode = FALSE;
+			log_debug("init done reached - rescue mode disabled");
+		}
+	}
+	goto EXIT;
+  }
 
   if( type == DBUS_MESSAGE_TYPE_METHOD_CALL && !strcmp(interface, USB_MODE_INTERFACE) && !strcmp(object, USB_MODE_OBJECT))
   {
@@ -345,10 +388,18 @@ error_reply:
 	}
 	else if(!strcmp(member, USB_MODE_LIST))
 	{
-		 gchar *mode_list = get_mode_list();
+		gchar *mode_list = get_mode_list(SUPPORTED_MODES_LIST);
 
                 if((reply = dbus_message_new_method_return(msg)))
                         dbus_message_append_args (reply, DBUS_TYPE_STRING, (const char *) &mode_list, DBUS_TYPE_INVALID);
+		g_free(mode_list);
+	}
+	else if(!strcmp(member, USB_MODE_AVAILABLE_MODES_GET))
+	{
+		gchar *mode_list = get_mode_list(AVAILABLE_MODES_LIST);
+
+		if((reply = dbus_message_new_method_return(msg)))
+			dbus_message_append_args (reply, DBUS_TYPE_STRING, (const char *) &mode_list, DBUS_TYPE_INVALID);
 		g_free(mode_list);
 	}
 	else if(!strcmp(member, USB_MODE_RESCUE_OFF))
@@ -356,6 +407,65 @@ error_reply:
 		rescue_mode = FALSE;
 		log_debug("Rescue mode off\n ");
 		reply = dbus_message_new_method_return(msg);
+	}
+	else if(!strcmp(member, USB_MODE_WHITELISTED_MODES_GET))
+	{
+		gchar *mode_list = get_mode_whitelist();
+
+		if(!mode_list)
+			mode_list = g_strdup("");
+
+		if((reply = dbus_message_new_method_return(msg)))
+			dbus_message_append_args(reply, DBUS_TYPE_STRING, &mode_list, DBUS_TYPE_INVALID);
+		g_free(mode_list);
+	}
+	else if(!strcmp(member, USB_MODE_WHITELISTED_MODES_SET))
+	{
+		const char *whitelist = 0;
+		DBusError err = DBUS_ERROR_INIT;
+
+		if (!dbus_message_get_args(msg, &err, DBUS_TYPE_STRING, &whitelist, DBUS_TYPE_INVALID))
+			reply = dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS, member);
+		else
+		{
+			int ret = set_mode_whitelist(whitelist);
+			if (ret == SET_CONFIG_UPDATED)
+                                usb_moded_send_config_signal(MODE_SETTING_ENTRY, MODE_WHITELIST_KEY, whitelist);
+			if (SET_CONFIG_OK(ret))
+			{
+				if ((reply = dbus_message_new_method_return(msg)))
+					dbus_message_append_args(reply, DBUS_TYPE_STRING, &whitelist, DBUS_TYPE_INVALID);
+			}
+			else
+                                reply = dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS, whitelist);
+		}
+		dbus_error_free(&err);
+	}
+	else if (!strcmp(member, USB_MODE_WHITELISTED_SET))
+	{
+		const char *mode = 0;
+		dbus_bool_t enabled = FALSE;
+		DBusError err = DBUS_ERROR_INIT;
+
+                if (!dbus_message_get_args(msg, &err, DBUS_TYPE_STRING, &mode, DBUS_TYPE_BOOLEAN, &enabled, DBUS_TYPE_INVALID))
+			reply = dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS, member);
+		else
+		{
+			int ret = set_mode_in_whitelist(mode, enabled);
+			if (ret == SET_CONFIG_UPDATED) 
+			{
+				char *whitelist = get_mode_whitelist(); 
+				if (!whitelist)
+					whitelist = g_strdup(MODE_UNDEFINED);
+				usb_moded_send_config_signal(MODE_SETTING_ENTRY, MODE_WHITELIST_KEY, whitelist);
+				g_free(whitelist);
+			}
+			if (SET_CONFIG_OK(ret))
+                                reply = dbus_message_new_method_return(msg);
+			else
+				reply = dbus_message_new_error(msg, DBUS_ERROR_INVALID_ARGS, mode);
+		}
+		dbus_error_free(&err);
 	}
 	else
 	{
@@ -482,6 +592,9 @@ gboolean usb_moded_dbus_init_connection(void)
   if (!dbus_connection_add_filter(dbus_connection_sys, msg_handler, NULL, NULL))
 	goto EXIT;
 
+  /* Listen to init-done signals */
+  dbus_bus_add_match(dbus_connection_sys, INIT_DONE_MATCH, 0);
+
   /* Connect D-Bus to the mainloop */
   dbus_connection_setup_with_g_main(dbus_connection_sys, NULL);
 
@@ -517,16 +630,8 @@ gboolean usb_moded_dbus_init_service(void)
 		log_debug("DBUS ERROR: %s, %s \n", error.name, error.message);
         goto EXIT;
   }
-
-  /* only match on signals/methods we support (if needed)
-  dbus_bus_add_match(dbus_connection_sys, USB_MODE_INTERFACE, &error);
-  */
-
-  dbus_threads_init_default();
-
-  /* Connect D-Bus to the mainloop */
-  dbus_connection_setup_with_g_main(dbus_connection_sys, NULL);
-
+  log_debug("claimed name %s", USB_MODE_SERVICE);
+  have_service_name = TRUE;
   /* everything went fine */
   status = TRUE;
 
@@ -535,23 +640,42 @@ EXIT:
   return status;
 }
 
+/** Release "com.meego.usb_moded" D-Bus Service Name
+ */
+static void usb_moded_dbus_cleanup_service(void)
+{
+    if( !have_service_name )
+        goto EXIT;
+
+    have_service_name = FALSE;
+    log_debug("release name %s", USB_MODE_SERVICE);
+
+    if( dbus_connection_sys &&
+        dbus_connection_get_is_connected(dbus_connection_sys) )
+    {
+        dbus_bus_release_name(dbus_connection_sys, USB_MODE_SERVICE, NULL);
+    }
+
+EXIT:
+    return;
+}
+
 /**
  * Clean up the dbus connections on exit
  *
  */
 void usb_moded_dbus_cleanup(void)
 {
-  /* clean up system bus connection */
-  if (dbus_connection_sys != NULL)
-  {
-	  if( dbus_connection_get_is_connected(dbus_connection_sys) ) {
-		  // FIXME: do we want to do this? It is pretty useless on exit path.
-		  dbus_bus_release_name(dbus_connection_sys, USB_MODE_SERVICE, NULL);
-	  }
-	  dbus_connection_remove_filter(dbus_connection_sys, msg_handler, NULL);
-	  dbus_connection_unref(dbus_connection_sys);
-          dbus_connection_sys = NULL;
-  }
+    /* clean up system bus connection */
+    if (dbus_connection_sys != NULL)
+    {
+	usb_moded_dbus_cleanup_service();
+
+	dbus_connection_remove_filter(dbus_connection_sys, msg_handler, NULL);
+
+	dbus_connection_unref(dbus_connection_sys),
+	    dbus_connection_sys = NULL;
+    }
 }
 
 /**
@@ -566,6 +690,14 @@ static int usb_moded_dbus_signal(const char *signal_type, const char *content)
   int result = 1;
   DBusMessage* msg = 0;
 
+  log_debug("broadcast signal %s(%s)\n", signal_type, content);
+
+  if( !have_service_name )
+  {
+	log_err("sending signal without service: %s(%s)",
+		signal_type, content);
+	goto EXIT;
+  }
   if(!dbus_connection_sys)
   {
 	log_err("Dbus system connection broken!\n");
@@ -639,6 +771,18 @@ int usb_moded_send_supported_modes_signal(const char *supported_modes)
 }
 
 /**
+ * Send regular usb_moded mode list signal
+ *
+ * @return 0 on success, 1 on failure
+ * @param available_modes list of available modes
+ *
+*/
+int usb_moded_send_available_modes_signal(const char *available_modes)
+{
+  return(usb_moded_dbus_signal(USB_MODE_AVAILABLE_MODES_SIGNAL_NAME, available_modes));
+}
+
+/**
  * Send regular usb_moded hidden mode list signal
  *
  * @return 0 on success, 1 on failure
@@ -648,6 +792,17 @@ int usb_moded_send_supported_modes_signal(const char *supported_modes)
 int usb_moded_send_hidden_modes_signal(const char *hidden_modes)
 {
   return(usb_moded_dbus_signal(USB_MODE_HIDDEN_MODES_SIGNAL_NAME, hidden_modes));
+}
+
+/**
+ * Send regular usb_moded whitelisted mode list signal
+ *
+ * @return 0 on success, 1 on failure
+ * @param whitelist list of allowed modes
+ */
+int usb_moded_send_whitelisted_modes_signal(const char *whitelist)
+{
+  return(usb_moded_dbus_signal(USB_MODE_WHITELISTED_MODES_SIGNAL_NAME, whitelist));
 }
 
 /** Async reply handler for usb_moded_get_name_owner_async()
@@ -680,7 +835,7 @@ static void usb_moded_get_name_owner_cb(DBusPendingCall *pc, void *aptr)
                                DBUS_TYPE_INVALID) )
     {
         if( strcmp(err.name, DBUS_ERROR_NAME_HAS_NO_OWNER) )
-            log_warning("parse error: %s: %s", err.name, err.message);
+            log_err("parse error: %s: %s", err.name, err.message);
         goto EXIT;
     }
 
