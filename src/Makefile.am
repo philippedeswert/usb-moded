@@ -2,13 +2,16 @@ sbin_PROGRAMS = usb_moded \
 		usb_moded_util 
 
 usb_moded_CPPFLAGS = \
-        $(USB_MODED_CFLAGS)
+        $(USB_MODED_CFLAGS) \
+	$(DSME_CFLAGS) ${SSU_CFLAGS}
 
 usb_moded_LDFLAGS = \
 	-Wl,--as-needed
 
 usb_moded_LDADD = \
-        $(USB_MODED_LIBS)
+        $(USB_MODED_LIBS) \
+        $(SYSTEMD_LIBS) \
+	$(DSME_LIBS) ${SSU_LIBS}
 		
 usb_moded_SOURCES = \
         usb_moded.c \

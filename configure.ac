@@ -35,7 +35,7 @@ AM_CONDITIONAL([DEBUG], [test x$debug = xtrue])
 
 AC_ARG_ENABLE([meegodevlock], AS_HELP_STRING([--enable-meegodevlock], [Enable Meego devicelock @<:@default=false@:>@]),
   [case "${enableval}" in
-   yes) meegodevlock=true ; CFLAGS="-DMEEGOLOCK $CFLAGS" ; PKG_CHECK_MODULES([DSME], [dsme]) ;;
+   yes) meegodevlock=true ; CFLAGS="-DMEEGOLOCK $CFLAGS" ; PKG_CHECK_MODULES([DSME], [dsme]); AC_SUBST([DSME_CFLAGS]) AC_SUBST([DSME_LIBS]) ;;
    no)  meegodevlock=false ;;
    *) AC_MSG_ERROR([bad value ${enableval} for --enable-meegodevlock]) ;;
    esac],[meegodevlock=false])
@@ -43,7 +43,7 @@ AM_CONDITIONAL([MEEGOLOCK], [test x$meegodevlock = xtrue])
 
 AC_ARG_ENABLE([mer_ssu], AS_HELP_STRING([--enable-mer-ssu], [Enable MER SSU @<:@default=false@:>@]),
   [case "${enableval}" in
-   yes) mer_ssu=true ; CFLAGS="-DUSE_MER_SSU $CFLAGS" ; PKG_CHECK_MODULES([SSU], [ssu-sysinfo]) ;;
+   yes) mer_ssu=true ; CFLAGS="-DUSE_MER_SSU $CFLAGS" ; PKG_CHECK_MODULES([SSU], [ssu-sysinfo]); AC_SUBST([SSU_CFLAGS]) AC_SUBST([SSU_LIBS]) ;;
    no)  mer_ssu=false ;;
    *) AC_MSG_ERROR([bad value ${enableval} for --enable-mer-ssu]) ;;
    esac],[mer_ssu=false])
@@ -75,7 +75,7 @@ AM_CONDITIONAL([CONNMAN], [test x$connman = xtrue])
 
 AC_ARG_ENABLE([systemd], AS_HELP_STRING([--enable-systemd], [Enable systemd notify interface @<:@default=false@:>@]),
   [case "${enableval}" in
-   yes) systemd=true ; CFLAGS="-DSYSTEMD $CFLAGS" ; LDFLAGS="-lsystemd $LDFLAGS"; PKG_CHECK_MODULES([SYSTEMD], [libsystemd]) ;;
+   yes) systemd=true ; CFLAGS="-DSYSTEMD $CFLAGS" ; PKG_CHECK_MODULES([SYSTEMD], [libsystemd]); AC_SUBST([SYSTEMD_LIBS]) ;;
    no)  systemd=false ;;
    *) AC_MSG_ERROR([bad value ${enableval} for --enable-systemd]) ;;
    esac],[systemd=false])
@@ -99,8 +99,9 @@ PKG_CHECK_MODULES([USB_MODED], [
  libkmod
 ])
 
-AC_SUBST(USB_MODED_LIBS)
-AC_SUBST(USB_MODED_CFLAGS)
+AC_SUBST([USB_MODED_LIBS])
+AC_SUBST([USB_MODED_CFLAGS])
+
 
 AC_CONFIG_FILES([
 	Makefile
@@ -114,8 +115,8 @@ echo "
  == $PACKAGE_NAME $VERSION ==
 
     Compiler:               ${CC}
-    CFLAGS:                 ${CFLAGS}
-    LDFLAGS:		    ${LDFLAGS}
+    CFLAGS:                 ${CFLAGS} ${USB_MODED_CFLAGS} ${DSME_CFLAGS} ${SSU_CFLAGS}
+    LDFLAGS:		    ${LDFLAGS} ${USB_MODED_LIBS} ${SYSTEMD_LIBS} ${DSME_LIBS} ${SSU_LIBS}
 
     Debug enabled:          ${debug}
 "
